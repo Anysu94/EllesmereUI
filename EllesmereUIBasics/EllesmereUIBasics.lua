@@ -415,12 +415,6 @@ end
 --  Initialization
 -------------------------------------------------------------------------------
 function EMC:OnInitialize()
-    -- Bail out if user has disabled this addon in Global Settings
-    if EllesmereUIDB and EllesmereUIDB.disabledAddons and EllesmereUIDB.disabledAddons[ADDON_NAME] then
-        self._userDisabled = true
-        return
-    end
-
     self.db = EllesmereUI.Lite.NewDB("EllesmereUIBasicsDB", DEFAULTS, true)
 
     -- Merge module defaults into profile if missing
@@ -450,8 +444,6 @@ function EMC:OnInitialize()
 end
 
 function EMC:OnEnable()
-    if self._userDisabled then return end
-
     -- Minimap button (shared across all Ellesmere addons â€” first to load wins)
     -- Minimap button (handled by parent addon)
     if not _EllesmereUI_MinimapRegistered and EllesmereUI and EllesmereUI.CreateMinimapButton then

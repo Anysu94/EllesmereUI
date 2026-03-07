@@ -253,12 +253,6 @@ ERF.anchorFrame = nil     -- movable anchor for positioning
 --  Initialization
 -------------------------------------------------------------------------------
 function ERF:OnInitialize()
-    -- Bail out if user has disabled this addon in Global Settings
-    if EllesmereUIDB and EllesmereUIDB.disabledAddons and EllesmereUIDB.disabledAddons[ADDON_NAME] then
-        self._userDisabled = true
-        return
-    end
-
     self.db = EllesmereUI.Lite.NewDB("EllesmereUIRaidFramesDB", defaults, true)
 
     -- Create the anchor frame for positioning (movable via unlock mode)
@@ -276,8 +270,6 @@ function ERF:OnInitialize()
 end
 
 function ERF:OnEnable()
-    if self._userDisabled then return end
-
     -- Minimap button (shared across all Ellesmere addons â€” first to load wins)
     -- Minimap button (handled by parent addon)
     if not _EllesmereUI_MinimapRegistered and EllesmereUI and EllesmereUI.CreateMinimapButton then

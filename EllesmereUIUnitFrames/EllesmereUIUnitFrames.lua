@@ -5906,12 +5906,6 @@ local function MigratePlayerTarget()
 end
 
 function EllesmereUF:OnInitialize()
-    -- Bail out if user has disabled this addon in Global Settings
-    if EllesmereUIDB and EllesmereUIDB.disabledAddons and EllesmereUIDB.disabledAddons[addonName] then
-        self._userDisabled = true
-        return
-    end
-
     db = EllesmereUI.Lite.NewDB("EllesmereUIUnitFramesDB", defaults, true)
     MigratePlayerTarget()
     -- Migrate old use3DPortrait boolean to new portraitMode string (one-time)
@@ -6067,8 +6061,6 @@ function EllesmereUF:OnInitialize()
 end
 
 function EllesmereUF:OnEnable()
-    if self._userDisabled then return end
-
     InitializeFrames()
     C_Timer.After(0, SetupOptionsPanel)
     C_Timer.After(0, function()

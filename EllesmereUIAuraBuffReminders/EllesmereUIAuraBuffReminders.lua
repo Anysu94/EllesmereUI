@@ -2097,9 +2097,6 @@ end
 local mainFrame = CreateFrame("Frame")
 
 mainFrame:SetScript("OnEvent", function(_, e, arg1, arg2)
-    -- Skip all processing if user has disabled this addon
-    if EllesmereUIDB and EllesmereUIDB.disabledAddons and EllesmereUIDB.disabledAddons[ADDON_NAME] then return end
-
     if e == "PLAYER_LOGIN" then
         db = EllesmereUI.Lite.NewDB("EllesmereUIAuraBuffRemindersDB", defaults, true)
 

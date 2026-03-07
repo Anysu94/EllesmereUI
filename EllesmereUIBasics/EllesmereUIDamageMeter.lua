@@ -211,11 +211,6 @@ local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:SetScript("OnEvent", function(self, event, arg1)
-    -- Check if user disabled this addon
-    if EllesmereUIDB and EllesmereUIDB.disabledAddons and EllesmereUIDB.disabledAddons[ADDON_NAME] then
-        return
-    end
-
     local dm = _G.DamageMeter
     if dm then
         C_Timer.After(1, function()

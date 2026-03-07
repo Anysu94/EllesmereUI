@@ -1,4 +1,4 @@
-﻿-------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 --  EUI_ResourceBars_Options.lua
 --  Registers the Resource Bars module with EllesmereUI
 --  Pages: Class, Power and Health Bars | Cast Bar | Unlock Mode
@@ -543,10 +543,6 @@ initFrame:SetScript("OnEvent", function(self)
             UnsnapTex(fill)
             pipC._barFill = fill
         else
-            -- Pips preview: pipWidth is total bar width; divide evenly across pips.
-            -- Any remainder pixels go into pip widths, not spacing.
-            local numPips = 5
-            local totalW = sp.pipWidth
             local pipSp = sp.pipSpacing
             local baseW = math.floor((totalW - (numPips - 1) * pipSp) / numPips)
             local remainder = totalW - (numPips - 1) * pipSp - baseW * numPips

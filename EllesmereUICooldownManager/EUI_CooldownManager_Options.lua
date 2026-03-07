@@ -2730,32 +2730,67 @@ initFrame:SetScript("OnEvent", function(self)
                     local bd = SelectedCDMBar()
                     if not bd then return end
                     local si = self._slotIdx
-                    local excl = {}
+
+                    -- Determine if this slot is occupied or empty
+                    local isOccupied = false
                     if bd.customSpells then
                         local t = bd.customSpells
-                        if t and t[si] and t[si] ~= 0 then excl[t[si]] = true end
+                        isOccupied = t and t[si] and t[si] ~= 0
                     else
-                        -- Build combined list for exclude
                         local tLen = bd.trackedSpells and #bd.trackedSpells or 0
-                        if si <= tLen then
-                            if bd.trackedSpells and bd.trackedSpells[si] and bd.trackedSpells[si] ~= 0 then
-                                excl[bd.trackedSpells[si]] = true
-                            end
+                        local eLen = bd.extraSpells and #bd.extraSpells or 0
+                        isOccupied = si >= 1 and si <= tLen + eLen
+                    end
+
+                    if isOccupied then
+                        -- Occupied slot: open picker to replace, exclude only this spell
+                        local excl = {}
+                        if bd.customSpells then
+                            local t = bd.customSpells
+                            excl[t[si]] = true
                         else
-                            local eIdx = si - tLen
-                            if bd.extraSpells and bd.extraSpells[eIdx] then
-                                excl[bd.extraSpells[eIdx]] = true
+                            local tLen = bd.trackedSpells and #bd.trackedSpells or 0
+                            if si <= tLen then
+                                if bd.trackedSpells[si] and bd.trackedSpells[si] ~= 0 then
+                                    excl[bd.trackedSpells[si]] = true
+                                end
+                            else
+                                local eIdx = si - tLen
+                                if bd.extraSpells and bd.extraSpells[eIdx] then
+                                    excl[bd.extraSpells[eIdx]] = true
+                                end
                             end
                         end
-                    end
-                    ShowSpellPicker(self, bd.key, si, excl, function(newCdID, isExtra)
-                        ns.ReplaceTrackedSpell(bd.key, si, newCdID, isExtra)
-                        ns.BuildAllCDMBars(); Refresh()
-                        C_Timer.After(0.05, function()
-                            if pf.Update then pf:Update() end
-                            UpdateCDMPreviewAndResize()
+                        ShowSpellPicker(self, bd.key, si, excl, function(newCdID, isExtra)
+                            ns.ReplaceTrackedSpell(bd.key, si, newCdID, isExtra)
+                            ns.BuildAllCDMBars(); Refresh()
+                            C_Timer.After(0.05, function()
+                                if pf.Update then pf:Update() end
+                                UpdateCDMPreviewAndResize()
+                            end)
                         end)
-                    end)
+                    else
+                        -- Empty slot: open picker to add, exclude all currently tracked spells
+                        local excl = {}
+                        if bd.customSpells then
+                            for _, sid in ipairs(bd.customSpells) do excl[sid] = true end
+                        else
+                            if bd.trackedSpells then
+                                for _, cdID in ipairs(bd.trackedSpells) do excl[cdID] = true end
+                            end
+                            if bd.extraSpells then
+                                for _, eid in ipairs(bd.extraSpells) do excl[eid] = true end
+                            end
+                        end
+                        ShowSpellPicker(self, bd.key, nil, excl, function(newCdID, isExtra)
+                            ns.AddTrackedSpell(bd.key, newCdID, isExtra)
+                            ns.BuildAllCDMBars(); Refresh()
+                            C_Timer.After(0.05, function()
+                                if pf.Update then pf:Update() end
+                                UpdateCDMPreviewAndResize()
+                            end)
+                        end)
+                    end
                 end
             end)
 
@@ -3121,6 +3156,7 @@ initFrame:SetScript("OnEvent", function(self)
             local grow     = bd.growDirection or "RIGHT"
             local numRows  = bd.numRows or 1
             if numRows < 1 then numRows = 1 end
+            if numRows > 3 then numRows = 3 end
 
             local tracked
             local isCustomBar = (bd.customSpells ~= nil)

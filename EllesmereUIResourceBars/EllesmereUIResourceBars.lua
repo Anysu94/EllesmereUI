@@ -274,7 +274,7 @@ local DEFAULTS = {
         secondary = {
             enabled     = true,
             scale       = 1.0,
-            pipWidth    = 42,
+            pipWidth    = 214,
             pipHeight   = 20,
             pipSpacing  = 1,
             borderSize  = 1,
@@ -779,10 +779,7 @@ local function RegisterUnlockElements()
                 local totalW = ERB.db.profile.primary.width or 214
                 return totalW, sp.pipHeight
             end
-            local maxPts = 5
-            if cachedSecondary then maxPts = cachedSecondary.max or 5 end
-            local totalW = maxPts * sp.pipWidth + (maxPts - 1) * sp.pipSpacing
-            return totalW, sp.pipHeight
+            return sp.pipWidth, sp.pipHeight
         end,
         getScale = function()
             return ERB.db.profile.secondary.scale or 1.0
@@ -1279,7 +1276,6 @@ local function BuildBars()
                 if realMax and realMax > 0 then maxPts = realMax end
             end
         end
-        local pipW = sp.pipWidth or 42
         local pipH = sp.pipHeight or 20
         local pipSp = sp.pipSpacing or 1
         local totalW
@@ -1289,9 +1285,10 @@ local function BuildBars()
             -- Bar-style secondary uses primary bar's width for consistency
             totalW = ERB.db.profile.primary.width or 214
         else
-            -- Use raw arithmetic for totalW; pips are two-point anchored
-            -- to the container so they can never bleed past the border.
-            totalW = maxPts * pipW + (maxPts - 1) * pipSp
+            -- pipWidth is the total bar width; divide evenly across pips.
+            -- Any remainder pixels are distributed one-per-pip from the left
+            -- so spacing is always exactly pipSp and never varies.
+            totalW = sp.pipWidth or 214
         end
 
         if sp.unlockPos and sp.unlockPos.point then
@@ -1371,7 +1368,7 @@ local function BuildBars()
         elseif cachedSecondary.type == "runes" then
             for i = 1, 6 do
                 if not runeFrames[i] then
-                    runeFrames[i] = CreatePip(secondaryFrame, pipW, pipH, i,
+                    runeFrames[i] = CreatePip(secondaryFrame, 20, pipH, i,
                         0, 0, 0, 0, 0)
                     local cdText = runeFrames[i]:CreateFontString(nil, "OVERLAY")
                     cdText:SetFont(GetRBFont(), 9, "OUTLINE")
@@ -1379,11 +1376,17 @@ local function BuildBars()
                     cdText:SetPoint("CENTER")
                     runeFrames[i]._cdText = cdText
                 end
-                -- Two-point anchor: LEFT and RIGHT both relative to the
-                -- container's LEFT edge.  This guarantees the pip can never
-                -- extend past the container (and its border).
-                local x0 = (i - 1) * (pipW + pipSp)
-                local x1 = x0 + pipW
+                -- Distribute total width evenly: base pip width + 1 extra pixel for
+                -- the first (remainder) pips so spacing is always exactly pipSp.
+                local numPips = 6
+                local baseW = math.floor((totalW - (numPips - 1) * pipSp) / numPips)
+                local remainder = totalW - (numPips - 1) * pipSp - baseW * numPips
+                local x0 = 0
+                for j = 1, i - 1 do
+                    local w = baseW + (j <= remainder and 1 or 0)
+                    x0 = x0 + w + pipSp
+                end
+                local x1 = x0 + baseW + (i <= remainder and 1 or 0)
                 local rf = runeFrames[i]
                 local function ApplyRunePos()
                     local ax0 = rf["_barAnim_x0"] or x0
@@ -1413,13 +1416,19 @@ local function BuildBars()
         else
             for i = 1, maxPts do
                 if not pips[i] then
-                    pips[i] = CreatePip(secondaryFrame, pipW, pipH, i,
+                    pips[i] = CreatePip(secondaryFrame, 20, pipH, i,
                         0, 0, 0, 0, 0)
                 end
-                -- Two-point anchor: LEFT and RIGHT both relative to the
-                -- container's LEFT edge.  Guarantees no bleed past border.
-                local x0 = (i - 1) * (pipW + pipSp)
-                local x1 = x0 + pipW
+                -- Distribute total width evenly: base pip width + 1 extra pixel for
+                -- the first (remainder) pips so spacing is always exactly pipSp.
+                local baseW = math.floor((totalW - (maxPts - 1) * pipSp) / maxPts)
+                local remainder = totalW - (maxPts - 1) * pipSp - baseW * maxPts
+                local x0 = 0
+                for j = 1, i - 1 do
+                    local w = baseW + (j <= remainder and 1 or 0)
+                    x0 = x0 + w + pipSp
+                end
+                local x1 = x0 + baseW + (i <= remainder and 1 or 0)
                 local pip = pips[i]
                 local function ApplyPipPos()
                     local ax0 = pip["_barAnim_x0"] or x0
@@ -2861,12 +2870,6 @@ end
 --  Initialization
 -------------------------------------------------------------------------------
 function ERB:OnInitialize()
-    -- Bail out if user has disabled this addon in Global Settings
-    if EllesmereUIDB and EllesmereUIDB.disabledAddons and EllesmereUIDB.disabledAddons[ADDON_NAME] then
-        self._userDisabled = true
-        return
-    end
-
     self.db = EllesmereUI.Lite.NewDB("EllesmereUIResourceBarsDB", DEFAULTS, true)
 
     -- One-time migration from AceDB to Lite: reset the profile to ensure
@@ -2886,8 +2889,6 @@ function ERB:OnInitialize()
 end
 
 function ERB:OnEnable()
-    if self._userDisabled then return end
-
     -- Minimap button (handled by parent addon)
     if not _EllesmereUI_MinimapRegistered and EllesmereUI and EllesmereUI.CreateMinimapButton then
         EllesmereUI.CreateMinimapButton()

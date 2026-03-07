@@ -20,7 +20,6 @@ local ADDON_NAME = ...
 local PAGE_GENERAL      = "General"
 local PAGE_CORE        = "Quick Setup"
 local PAGE_COLORS      = "Fonts & Colors"
-local PAGE_ADDONS      = "Enabled Addons"
 local PAGE_PROFILES    = "Profiles"
 
 -------------------------------------------------------------------------------
@@ -1650,114 +1649,6 @@ initFrame:SetScript("OnEvent", function(self)
 
         _, h = W:Spacer(parent, y, 20);  y = y - h
 
-        -------------------------------------------------------------------
-        --  ENABLED ADDONS
-        -------------------------------------------------------------------
-        _, h = W:SectionHeader(parent, "ENABLED ADDONS", y);  y = y - h
-
-        do
-            local roster = EllesmereUI.ADDON_ROSTER
-            if roster then
-                local function IsAddonInstalled(folder)
-                    if C_AddOns and C_AddOns.IsAddOnLoaded then return C_AddOns.IsAddOnLoaded(folder) end
-                    if IsAddOnLoaded then return IsAddOnLoaded(folder) end
-                    return false
-                end
-
-                local function GetDisabledDB()
-                    if not EllesmereUIDB then EllesmereUIDB = {} end
-                    if not EllesmereUIDB.disabledAddons then EllesmereUIDB.disabledAddons = {} end
-                    return EllesmereUIDB.disabledAddons
-                end
-
-                local function ShowReloadPopup()
-                    EllesmereUI:ShowConfirmPopup({
-                        title       = "Reload Required",
-                        message     = "Toggling an addon requires a UI reload to take effect.",
-                        confirmText = "Reload Now",
-                        cancelText  = "Later",
-                        onConfirm   = function() ReloadUI() end,
-                    })
-                end
-
-                parent._showRowDivider = true
-
-                local installed = {}
-                for _, info in ipairs(roster) do
-                    if not info.alwaysLoaded and IsAddonInstalled(info.folder) then
-                        installed[#installed + 1] = info
-                    end
-                end
-
-                local function CountEnabled()
-                    local db = GetDisabledDB()
-                    local n = 0
-                    for _, info in ipairs(installed) do
-                        if db[info.folder] ~= true then n = n + 1 end
-                    end
-                    return n
-                end
-
-                local function IsLastEnabled(folder)
-                    local db = GetDisabledDB()
-                    if db[folder] == true then return false end
-                    return CountEnabled() <= 1
-                end
-
-                local LAST_ADDON_TIP = "You must have at least one addon enabled"
-
-                for i = 1, #installed, 2 do
-                    local left = installed[i]
-                    local right = installed[i + 1]
-
-                    local leftCfg = {
-                        type = "toggle",
-                        text = left.display,
-                        disabled = function() return IsLastEnabled(left.folder) end,
-                        disabledTooltip = LAST_ADDON_TIP,
-                        getValue = function()
-                            local db = GetDisabledDB()
-                            return db[left.folder] ~= true
-                        end,
-                        setValue = function(v)
-                            local db = GetDisabledDB()
-                            db[left.folder] = (not v) or nil
-                            local rl = EllesmereUI._widgetRefreshList
-                            if rl then for ri = 1, #rl do rl[ri]() end end
-                            ShowReloadPopup()
-                        end,
-                    }
-
-                    local rightCfg
-                    if right then
-                        rightCfg = {
-                            type = "toggle",
-                            text = right.display,
-                            disabled = function() return IsLastEnabled(right.folder) end,
-                            disabledTooltip = LAST_ADDON_TIP,
-                            getValue = function()
-                                local db = GetDisabledDB()
-                                return db[right.folder] ~= true
-                            end,
-                            setValue = function(v)
-                                local db = GetDisabledDB()
-                                db[right.folder] = (not v) or nil
-                                local rl = EllesmereUI._widgetRefreshList
-                                if rl then for ri = 1, #rl do rl[ri]() end end
-                                ShowReloadPopup()
-                            end,
-                        }
-                    else
-                        rightCfg = { type = "label", text = "" }
-                    end
-
-                    _, h = W:DualRow(parent, y, leftCfg, rightCfg);  y = y - h
-                end
-            end
-        end
-
-        _, h = W:Spacer(parent, y, 20);  y = y - h
-
         -- Reset ALL EUI Addon Settings (wide warning button)
         y = y - 30  -- spacer
         do
@@ -2963,112 +2854,6 @@ initFrame:SetScript("OnEvent", function(self)
     ---------------------------------------------------------------------------
     --  Enabled Addons page
     ---------------------------------------------------------------------------
-    local function BuildEnabledAddonsPage(pageName, parent, yOffset)
-        local W = EllesmereUI.Widgets
-        local y = yOffset
-        local _, h
-        local roster = EllesmereUI.ADDON_ROSTER
-        if not roster then return end
-
-        local function IsAddonInstalled(folder)
-            if C_AddOns and C_AddOns.IsAddOnLoaded then return C_AddOns.IsAddOnLoaded(folder) end
-            if IsAddOnLoaded then return IsAddOnLoaded(folder) end
-            return false
-        end
-
-        local function GetDisabledDB()
-            if not EllesmereUIDB then EllesmereUIDB = {} end
-            if not EllesmereUIDB.disabledAddons then EllesmereUIDB.disabledAddons = {} end
-            return EllesmereUIDB.disabledAddons
-        end
-
-        local function ShowReloadPopup()
-            EllesmereUI:ShowConfirmPopup({
-                title       = "Reload Required",
-                message     = "Toggling an addon requires a UI reload to take effect.",
-                confirmText = "Reload Now",
-                cancelText  = "Later",
-                onConfirm   = function() ReloadUI() end,
-            })
-        end
-
-        parent._showRowDivider = true
-
-        -- Build pairs of addons for DualRow layout (skip alwaysLoaded like Party Mode)
-        local installed = {}
-        for _, info in ipairs(roster) do
-            if not info.alwaysLoaded and IsAddonInstalled(info.folder) then
-                installed[#installed + 1] = info
-            end
-        end
-
-        -- Count how many installed addons are currently enabled
-        local function CountEnabled()
-            local db = GetDisabledDB()
-            local n = 0
-            for _, info in ipairs(installed) do
-                if db[info.folder] ~= true then n = n + 1 end
-            end
-            return n
-        end
-
-        -- Check if a specific addon is the last one enabled (cannot be turned off)
-        local function IsLastEnabled(folder)
-            local db = GetDisabledDB()
-            if db[folder] == true then return false end  -- already disabled, not relevant
-            return CountEnabled() <= 1
-        end
-
-        local LAST_ADDON_TIP = "You must have at least one addon enabled"
-
-        for i = 1, #installed, 2 do
-            local left = installed[i]
-            local right = installed[i + 1]
-
-            local leftCfg = {
-                type = "toggle",
-                text = left.display,
-                disabled = function() return IsLastEnabled(left.folder) end,
-                disabledTooltip = LAST_ADDON_TIP,
-                getValue = function()
-                    local db = GetDisabledDB()
-                    return db[left.folder] ~= true
-                end,
-                setValue = function(v)
-                    local db = GetDisabledDB()
-                    db[left.folder] = (not v) or nil
-                    local rl = EllesmereUI._widgetRefreshList
-                    if rl then for ri = 1, #rl do rl[ri]() end end
-                    ShowReloadPopup()
-                end,
-            }
-
-            local rightCfg
-            if right then
-                rightCfg = {
-                    type = "toggle",
-                    text = right.display,
-                    disabled = function() return IsLastEnabled(right.folder) end,
-                    disabledTooltip = LAST_ADDON_TIP,
-                    getValue = function()
-                        local db = GetDisabledDB()
-                        return db[right.folder] ~= true
-                    end,
-                    setValue = function(v)
-                        local db = GetDisabledDB()
-                        db[right.folder] = (not v) or nil
-                        local rl = EllesmereUI._widgetRefreshList
-                        if rl then for ri = 1, #rl do rl[ri]() end end
-                        ShowReloadPopup()
-                    end,
-                }
-            else
-                rightCfg = { type = "label", text = "" }
-            end
-
-            _, h = W:DualRow(parent, y, leftCfg, rightCfg);  y = y - h
-        end
-    end
 
     local disabledList = { PAGE_CORE, PAGE_PROFILES }
     local disabledTips = { [PAGE_CORE] = "Coming Soon", [PAGE_PROFILES] = "Coming Soon" }
@@ -3076,7 +2861,7 @@ initFrame:SetScript("OnEvent", function(self)
     EllesmereUI:RegisterModule(GLOBAL_KEY, {
         title       = "Global Settings",
         description = "General options for all EllesmereUI addons.",
-        pages       = { PAGE_GENERAL, PAGE_CORE, PAGE_COLORS, PAGE_ADDONS, PAGE_PROFILES },
+        pages       = { PAGE_GENERAL, PAGE_CORE, PAGE_COLORS, PAGE_PROFILES },
         disabledPages = disabledList,
         disabledPageTooltips = disabledTips,
         buildPage   = function(pageName, parent, yOffset)
@@ -3086,8 +2871,6 @@ initFrame:SetScript("OnEvent", function(self)
                 return BuildColorsPage(pageName, parent, yOffset)
             elseif pageName == PAGE_CORE then
                 return BuildCoreOptionsPage(pageName, parent, yOffset)
-            elseif pageName == PAGE_ADDONS then
-                return BuildEnabledAddonsPage(pageName, parent, yOffset)
             end
         end,
         onReset     = function()
@@ -3108,7 +2891,6 @@ initFrame:SetScript("OnEvent", function(self)
                 EllesmereUIDB.showSecondaryStats = false
                 EllesmereUIDB.guildChatPrivacy = false
                 EllesmereUIDB.repairWarning = nil
-                EllesmereUIDB.disabledAddons = nil
                 -- Developer settings defaults
                 EllesmereUIDB.errorGrabber = false
                 EllesmereUIDB.errorSound = false

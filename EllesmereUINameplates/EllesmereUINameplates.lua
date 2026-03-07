@@ -1643,9 +1643,6 @@ kickWatcher:RegisterEvent("PLAYER_LOGIN")
 kickWatcher:RegisterEvent("SPELLS_CHANGED")
 local activeCastCount = 0
 kickWatcher:SetScript("OnEvent", function(self, event)
-    -- Skip all processing if user has disabled this addon
-    if EllesmereUIDB and EllesmereUIDB.disabledAddons and EllesmereUIDB.disabledAddons[addon] then return end
-
     if event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_USABLE" then
         for _, plate in pairs(ns.plates) do
             if plate.isCasting and plate.unit then
@@ -4247,9 +4244,6 @@ function ns.RefreshFriendlyNameOnlyOffset()
 end
 
 manager:SetScript("OnEvent", function(self, event, unit)
-    -- Skip all processing if user has disabled this addon
-    if EllesmereUIDB and EllesmereUIDB.disabledAddons and EllesmereUIDB.disabledAddons[addon] then return end
-
     if event == "NAME_PLATE_UNIT_ADDED" then
         local nameplate = C_NamePlate.GetNamePlateForUnit(unit)
         if not nameplate then return end
@@ -4538,7 +4532,6 @@ function npAddon:OnInitialize()
     InitDB()
 end
 function npAddon:OnEnable()
-    if EllesmereUIDB and EllesmereUIDB.disabledAddons and EllesmereUIDB.disabledAddons["EllesmereUINameplates"] then return end
     SetupAuraCVars()
     ApplyClassPowerSetting()
     -- Apply spec-assigned preset on login (before UI is opened)

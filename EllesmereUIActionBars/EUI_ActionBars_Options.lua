@@ -417,6 +417,14 @@ initFrame:SetScript("OnEvent", function(self)
             return math.floor(val * s + 0.5) / s
         end
 
+        -- Scale-aware snap: snaps val to the pixel grid at pf's scale * barScale.
+        -- Mirrors SnapForScale from the real bars so button sizes stay pixel-perfect
+        -- at every barScale value, preventing jumpy borders during slider drags.
+        local function SnapS(val, scale)
+            local s = pf:GetEffectiveScale() * (scale or 1)
+            return math.floor(val * s + 0.5) / s
+        end
+
         -- Disable WoW's automatic pixel snapping on a texture
         local function UnsnapTex(tex)
             if tex.SetSnapToPixelGrid then tex:SetSnapToPixelGrid(false); tex:SetTexelSnappingBias(0) end
@@ -467,41 +475,12 @@ initFrame:SetScript("OnEvent", function(self)
                 borders = { bT, bB, bL, bR },
                 keybind = keybindFS,
                 count   = countFS,
-                -- Animation state (nil = not yet initialized)
-                targetX = nil, targetY = nil, targetW = nil, targetH = nil,
-                currentX = nil, currentY = nil, currentW = nil, currentH = nil,
             }
         end
 
         -- Preview background texture (behind all buttons)
         local previewBG = pf:CreateTexture(nil, "BACKGROUND", nil, -1)
         previewBG:Hide()
-
-        -- Animation OnUpdate handler for smooth preview transitions
-        local ANIM_SPEED = 12  -- lerp factor per second (~0.2s to settle)
-        local animOnUpdate = function(self, elapsed)
-            local t = math.min(1, ANIM_SPEED * elapsed)
-            local anyMoving = false
-            local s = self:GetEffectiveScale()
-            local function SnapAnim(val) return math.floor(val * s + 0.5) / s end
-            for i = 1, maxBtns do
-                local e = buttons[i]
-                if e.targetX and e.currentX then
-                    e.currentX = e.currentX + (e.targetX - e.currentX) * t
-                    e.currentY = e.currentY + (e.targetY - e.currentY) * t
-                    e.currentW = e.currentW + (e.targetW - e.currentW) * t
-                    e.currentH = e.currentH + (e.targetH - e.currentH) * t
-                    e.frame:SetSize(SnapAnim(e.currentW), SnapAnim(e.currentH))
-                    e.frame:ClearAllPoints()
-                    e.frame:SetPoint("TOPLEFT", self, "TOPLEFT", SnapAnim(e.currentX), SnapAnim(e.currentY))
-                    if math.abs(e.currentX - e.targetX) > 0.1 or
-                       math.abs(e.currentW - e.targetW) > 0.1 then
-                        anyMoving = true
-                    end
-                end
-            end
-            if not anyMoving then self:SetScript("OnUpdate", nil) end
-        end
 
         -- Store barFrame ref and base size for Update
         pf._barFrame  = barFrame
@@ -511,7 +490,6 @@ initFrame:SetScript("OnEvent", function(self)
         pf._blizzEditScale = blizzEditScale
         pf._buttons   = buttons
         pf._previewBG = previewBG
-        pf._lastShape = nil  -- track shape changes for instant snap
 
         -- The Update method ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â reads current DB + Blizzard state, applies it --
         pf.Update = function(self)
@@ -540,10 +518,11 @@ initFrame:SetScript("OnEvent", function(self)
             end
 
 
-            -- Multi-row layout: show all rows matching the real bar
+            -- Multi-row layout: show all rows matching the real bar (capped at 3 in preview)
             local numRows = settings.numRows or 1
             local ovRows = settings.overrideNumRows
             if ovRows and ovRows > 0 then numRows = ovRows end
+            if numRows > 3 then numRows = 3 end
             local stride = math.ceil(numVisible / numRows)
             local previewCount = numVisible
             -- Read showEmpty early so the leftmost/rightmost block can reference it
@@ -602,28 +581,20 @@ initFrame:SetScript("OnEvent", function(self)
                 if ct then local cc = RAID_CLASS_COLORS[ct]; if cc then shapeBrdR, shapeBrdG, shapeBrdB = cc.r, cc.g, cc.b end end
             end
 
-            local scaledBtnW = Snap(btnW * (self._blizzEditScale or 1) * barScale)
-            local scaledBtnH = Snap(btnH * (self._blizzEditScale or 1) * barScale)
+            local scaledBtnW = SnapS(btnW * (self._blizzEditScale or 1) * barScale, barScale)
+            local scaledBtnH = SnapS(btnH * (self._blizzEditScale or 1) * barScale, barScale)
             -- Expand button size for custom shapes (mirrors SHAPE_BTN_EXPAND in main file)
             if btnShape ~= "none" and btnShape ~= "cropped" then
-                local shapeExp = Snap(ns.SHAPE_BTN_EXPAND * (self._blizzEditScale or 1) * barScale)
+                local shapeExp = SnapS(ns.SHAPE_BTN_EXPAND * (self._blizzEditScale or 1) * barScale, barScale)
                 scaledBtnW = scaledBtnW + shapeExp
                 scaledBtnH = scaledBtnH + shapeExp
             end
             -- Shrink button height for "cropped" mode (10% top + 10% bottom)
             if btnShape == "cropped" then
-                scaledBtnH = Snap(scaledBtnH * 0.80)
+                scaledBtnH = SnapS(scaledBtnH * 0.80, barScale)
             end
 
-            -- Force immediate snap when shape changes (prevents stale animation targets)
-            if self._lastShape ~= btnShape then
-                self._lastShape = btnShape
-                for i = 1, maxBtns do
-                    buttons[i].currentX = nil
-                end
-                self:SetScript("OnUpdate", nil)
-            end
-            local scaledPad  = Snap(spacing * (self._blizzEditScale or 1) * barScale)
+            local scaledPad  = SnapS(spacing * (self._blizzEditScale or 1) * barScale, barScale)
 
             -- Scale font sizes proportionally
             local totalScale = (self._blizzEditScale or 1) * barScale
@@ -664,25 +635,9 @@ initFrame:SetScript("OnEvent", function(self)
                     local startX = Snap(gridStartX + (gridW - rowW) / 2)
                     local xOff = Snap(startX + col * (scaledBtnW + scaledPad))
                     local yOff = startY - Snap(row * (scaledBtnH + scaledPad))
-                    -- Set animation targets
-                    entry.targetX = xOff
-                    entry.targetY = yOff
-                    entry.targetW = scaledBtnW
-                    entry.targetH = scaledBtnH
-
-                    if not entry.currentX then
-                        -- First run or bar switch: snap immediately
-                        entry.currentX = xOff
-                        entry.currentY = yOff
-                        entry.currentW = scaledBtnW
-                        entry.currentH = scaledBtnH
-                        bf:SetSize(scaledBtnW, scaledBtnH)
-                        bf:ClearAllPoints()
-                        bf:SetPoint("TOPLEFT", self, "TOPLEFT", xOff, yOff)
-                    else
-                        -- Animate to new targets
-                        self:SetScript("OnUpdate", animOnUpdate)
-                    end
+                    bf:SetSize(scaledBtnW, scaledBtnH)
+                    bf:ClearAllPoints()
+                    bf:SetPoint("TOPLEFT", self, "TOPLEFT", xOff, yOff)
                     bf:Show()
 
                     -- Icon texture from real button
@@ -722,7 +677,7 @@ initFrame:SetScript("OnEvent", function(self)
                             local _, ct2 = UnitClass("player")
                             if ct2 then local cc2 = RAID_CLASS_COLORS[ct2]; if cc2 then cr, cg, cb = cc2.r, cc2.g, cc2.b end end
                         end
-                        local sz = Snap(brdSize)
+                        local sz = SnapS(brdSize, barScale)
 
                         bT:SetColorTexture(cr, cg, cb, ca)
                         UnsnapTex(bT)
@@ -882,7 +837,6 @@ initFrame:SetScript("OnEvent", function(self)
                 else
                     -- Button beyond numButtonsShowable ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â hide it
                     bf:Hide()
-                    entry.currentX = nil  -- reset animation state
                 end
             end
 

@@ -2377,7 +2377,7 @@ LayoutCDMBar = function(barKey)
 
     -- Position each icon in a grid anchored to the frame's corners.
     -- Frame bounding box == icon grid, so frame CENTER == icon grid center.
-    -- This keeps saved/captured CENTER positions accurate.
+    -- Partial rows (fewer icons than stride) are centered within the frame width.
     for i, icon in ipairs(visibleIcons) do
         PP.Size(icon, iconW, iconH)
         if icon._glowOverlay then
@@ -2389,25 +2389,34 @@ LayoutCDMBar = function(barKey)
         local col = idx % stride
         local row = math.floor(idx / stride)
 
+        -- Count how many icons are in this row to detect partial rows
+        local rowStart = row * stride
+        local iconsInRow = math.min(stride, count - rowStart)
+
         if grow == "RIGHT" then
             local flippedRow = (numRows - 1) - row
+            -- Center partial rows: offset by half the missing icons' width
+            local rowOffset = math.floor((stride - iconsInRow) * stepW / 2)
             PP.Point(icon, "TOPLEFT", frame, "TOPLEFT",
-                col * stepW,
+                col * stepW + rowOffset,
                 -(flippedRow * stepH))
         elseif grow == "LEFT" then
             local flippedRow = (numRows - 1) - row
+            local rowOffset = math.floor((stride - iconsInRow) * stepW / 2)
             PP.Point(icon, "TOPRIGHT", frame, "TOPRIGHT",
-                -(col * stepW),
+                -(col * stepW + rowOffset),
                 -(flippedRow * stepH))
         elseif grow == "DOWN" then
             local flippedRow = (numRows - 1) - row
+            local rowOffset = math.floor((stride - iconsInRow) * stepH / 2)
             PP.Point(icon, "TOPLEFT", frame, "TOPLEFT",
                 flippedRow * stepW,
-                -(col * stepH))
+                -(col * stepH + rowOffset))
         elseif grow == "UP" then
+            local rowOffset = math.floor((stride - iconsInRow) * stepH / 2)
             PP.Point(icon, "BOTTOMLEFT", frame, "BOTTOMLEFT",
                 row * stepW,
-                col * stepH)
+                col * stepH + rowOffset)
         end
     end
 end
@@ -3112,30 +3121,28 @@ UpdateCDMBarIcons = function(barKey)
             local skipCDDisplay = false
 
             if isAura and activeAnim ~= "hideActive" then
-                -- For charge-based spells, the CD display takes priority over
-                -- the aura duration — the HOT being on self should not hide the
-                -- charge recharge timer. We still mark auraHandled so the active
-                -- glow fires correctly.
-                local isChargeSid = resolvedSid and C_Spell.GetSpellChargeDuration
-                    and C_Spell.GetSpellChargeDuration(resolvedSid)
-                if isChargeSid then
-                    -- Charge spell: mark active for glow, but let ApplySpellCooldown
-                    -- show the charge CD normally (skipCDDisplay stays false)
-                    auraHandled = true
-                else
-                    -- Non-charge aura: show aura duration on the cooldown frame
-                    local auraID = blizzIcon.auraInstanceID
-                    if auraID then
-                        local unit = blizzIcon.auraDataUnit or "player"
-                        local ok, auraDurObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraID)
-                        if ok and auraDurObj then
-                            ourIcon._cooldown:Clear()
-                            pcall(ourIcon._cooldown.SetCooldownFromDurationObject, ourIcon._cooldown, auraDurObj, true)
-                            ourIcon._cooldown:SetReverse(false)
-                            auraHandled = true
-                            skipCDDisplay = true
-                        end
+                -- Use non-secret charge detection (returns plain table, not DurationObject)
+                local chargeInfo = resolvedSid and C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(resolvedSid)
+                local isChargeSid = chargeInfo ~= nil
+                -- Buff bars always show buff duration; other bars skip aura duration for charge spells
+                local isBuffBar = (barKey == "buffs")
+                local auraID = blizzIcon.auraInstanceID
+                if auraID and (not isChargeSid or isBuffBar) then
+                    -- Show buff duration on the cooldown frame
+                    local unit = blizzIcon.auraDataUnit or "player"
+                    local ok, auraDurObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraID)
+                    if ok and auraDurObj then
+                        ourIcon._cooldown:Clear()
+                        pcall(ourIcon._cooldown.SetCooldownFromDurationObject, ourIcon._cooldown, auraDurObj, true)
+                        ourIcon._cooldown:SetReverse(false)
+                        auraHandled = true
+                        skipCDDisplay = true
+                    else
+                        auraHandled = true
                     end
+                else
+                    -- Charge spell on non-buff bar: mark active for glow, show charge CD
+                    auraHandled = true
                 end
             end
 
@@ -3468,29 +3475,28 @@ local function UpdateTrackedBarIcons(barKey)
             local skipCDDisplay = false
 
             if isAura and activeAnim ~= "hideActive" then
-                -- For charge-based spells, the CD display takes priority over
-                -- the aura duration — the HOT being on self should not hide the
-                -- charge recharge timer. We still mark auraHandled so the active
-                -- glow fires correctly.
-                local isChargeSid = resolvedSid and C_Spell.GetSpellChargeDuration
-                    and C_Spell.GetSpellChargeDuration(resolvedSid)
-                if isChargeSid then
-                    -- Charge spell: mark active for glow, but let ApplySpellCooldown
-                    -- show the charge CD normally (skipCDDisplay stays false)
-                    auraHandled = true
-                else
-                    local auraID = blizzChild.auraInstanceID
-                    if auraID then
-                        local unit = blizzChild.auraDataUnit or "player"
-                        local ok, auraDurObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraID)
-                        if ok and auraDurObj then
-                            ourIcon._cooldown:Clear()
-                            pcall(ourIcon._cooldown.SetCooldownFromDurationObject, ourIcon._cooldown, auraDurObj, true)
-                            ourIcon._cooldown:SetReverse(false)
-                            auraHandled = true
-                            skipCDDisplay = true
-                        end
+                -- Use non-secret charge detection (returns plain table, not DurationObject)
+                local chargeInfo = resolvedSid and C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(resolvedSid)
+                local isChargeSid = chargeInfo ~= nil
+                -- Buff bars always show buff duration; other bars skip aura duration for charge spells
+                local isBuffBar = (barKey == "buffs")
+                local auraID = blizzChild.auraInstanceID
+                if auraID and (not isChargeSid or isBuffBar) then
+                    -- Show buff duration on the cooldown frame
+                    local unit = blizzChild.auraDataUnit or "player"
+                    local ok, auraDurObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraID)
+                    if ok and auraDurObj then
+                        ourIcon._cooldown:Clear()
+                        pcall(ourIcon._cooldown.SetCooldownFromDurationObject, ourIcon._cooldown, auraDurObj, true)
+                        ourIcon._cooldown:SetReverse(false)
+                        auraHandled = true
+                        skipCDDisplay = true
+                    else
+                        auraHandled = true
                     end
+                else
+                    -- Charge spell on non-buff bar: mark active for glow, show charge CD
+                    auraHandled = true
                 end
             end
 
@@ -4845,12 +4851,6 @@ local function SetActiveSpec()
 end
 
 function ECME:OnInitialize()
-    -- Bail out if user has disabled this addon in Global Settings
-    if EllesmereUIDB and EllesmereUIDB.disabledAddons and EllesmereUIDB.disabledAddons[ADDON_NAME] then
-        self._userDisabled = true
-        return
-    end
-
     self.db = EllesmereUI.Lite.NewDB("EllesmereUICooldownManagerDB", DEFAULTS, true)
 
     -- Migration: enable showStackCount on the buffs bar (was false by default)
@@ -4894,8 +4894,6 @@ function ECME:OnInitialize()
 end
 
 function ECME:OnEnable()
-    if self._userDisabled then return end
-
     -- Cache player race/class for trinket/racial/potion tracking
     _playerRace = select(2, UnitRace("player"))
     _playerClass = select(2, UnitClass("player"))

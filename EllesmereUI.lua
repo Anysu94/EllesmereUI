@@ -2740,13 +2740,6 @@ local function CreateMainFrame()
                 end
                 return
             end
-            -- Show tooltip for user-disabled addons
-            if self._userDisabled then
-                if EllesmereUI.ShowWidgetTooltip then
-                    EllesmereUI.ShowWidgetTooltip(self, "This option requires you to enable " .. (info.display) .. " in the Global Settings -> Enabled Addons tab")
-                end
-                return
-            end
             hlTex:SetAlpha(0.06)
             if activeModule ~= self._folder then
                 self._hoverGlow:Show()
@@ -2761,7 +2754,6 @@ local function CreateMainFrame()
         btn:SetScript("OnLeave", function(self)
             if EllesmereUI.HideWidgetTooltip then EllesmereUI.HideWidgetTooltip() end
             if self._comingSoon then return end
-            if self._userDisabled then return end
             hlTex:SetAlpha(0)
             self._hoverGlow:Hide()
             self._hoverIndicator:Hide()
@@ -2775,7 +2767,6 @@ local function CreateMainFrame()
         end)
         btn:SetScript("OnClick", function(self)
             if self._comingSoon then return end
-            if self._userDisabled then return end
             if self._loaded and modules[self._folder] then
                 EllesmereUI:SelectModule(self._folder)
             elseif not self._loaded or not modules[self._folder] then
@@ -4960,37 +4951,17 @@ local function RefreshSidebarStates()
     end
 
     local firstLoaded = nil
-    local disabledAddons = EllesmereUIDB and EllesmereUIDB.disabledAddons or {}
 
-    -- Sort: enabled/loaded addons first, disabled/uninstalled last
-    local enabledList, disabledList = {}, {}
-    for _, info in ipairs(ADDON_ROSTER) do
-        local folder = info.folder
-        local loaded = info.alwaysLoaded or IsAddonLoaded(folder)
-        local userDisabled = loaded and disabledAddons[folder] == true
-        if loaded and not userDisabled then
-            enabledList[#enabledList + 1] = info
-        else
-            disabledList[#disabledList + 1] = info
-        end
-    end
-    local sortedRoster = {}
-    for _, info in ipairs(enabledList) do sortedRoster[#sortedRoster + 1] = info end
-    for _, info in ipairs(disabledList) do sortedRoster[#sortedRoster + 1] = info end
-
-    for rowIndex, info in ipairs(sortedRoster) do
+    for rowIndex, info in ipairs(ADDON_ROSTER) do
         local folder = info.folder
         local btn = sidebarButtons[folder]
         if not btn then break end
-        -- Reposition button based on sorted order
+        -- Reposition button based on roster order
         btn:ClearAllPoints()
         btn:SetPoint("TOPLEFT", sidebar, "TOPLEFT", 0, _sidebarAddonNavTop - (rowIndex - 1) * _sidebarNavRowH)
-        -- Party Mode is baked into all addons; always treat it as loaded
         local loaded = info.alwaysLoaded or IsAddonLoaded(folder)
-        local userDisabled = loaded and disabledAddons[folder] == true
         btn._loaded = loaded
-        btn._userDisabled = userDisabled
-        if loaded and not userDisabled then
+        if loaded then
             btn._dlIcon:Hide()
             if folder == activeModule then
                 btn._label:SetTextColor(NAV_SELECTED_TEXT.r, NAV_SELECTED_TEXT.g, NAV_SELECTED_TEXT.b, NAV_SELECTED_TEXT.a)
@@ -5006,18 +4977,6 @@ local function RefreshSidebarStates()
                 btn._iconGlow:Hide()
             end
             if not firstLoaded then firstLoaded = folder end
-        elseif userDisabled then
-            -- Installed but user-disabled: show disabled coloring, no download icon
-            btn._dlIcon:Hide()
-            btn._label:SetTextColor(NAV_DISABLED_TEXT.r, NAV_DISABLED_TEXT.g, NAV_DISABLED_TEXT.b, NAV_DISABLED_TEXT.a)
-            btn._icon:SetTexture(btn._iconOff)
-            btn._icon:SetDesaturated(true)
-            btn._icon:SetAlpha(NAV_DISABLED_ICON_A)
-            btn._iconGlow:Hide()
-            btn._indicator:Hide()
-            btn._glow:Hide()
-            btn._glowTop:Hide()
-            btn._glowBot:Hide()
         else
             btn._dlIcon:Show()
             btn._label:SetTextColor(NAV_DISABLED_TEXT.r, NAV_DISABLED_TEXT.g, NAV_DISABLED_TEXT.b, NAV_DISABLED_TEXT.a)
@@ -5031,10 +4990,8 @@ local function RefreshSidebarStates()
             btn._glowBot:Hide()
         end
     end
-    -- Default to Global Settings if no module is active (or active module lost)
-    -- Also reset if the active module is a user-disabled addon
-    local activeDisabled = activeModule and disabledAddons[activeModule] == true
-    if not activeModule or activeDisabled then
+    -- Default to Global Settings if no module is active
+    if not activeModule then
         activeModule = nil
         if modules["_EUIGlobal"] then
             EllesmereUI:SelectModule("_EUIGlobal")
@@ -5217,7 +5174,7 @@ end
 -------------------------------------------------------------------------------
 --  Slash commands
 -------------------------------------------------------------------------------
-EllesmereUI.VERSION = "3.2.5"
+EllesmereUI.VERSION = "3.2.7"
 
 -- Register this addon's version into a shared global table (taint-free at load time)
 if not _G._EUI_AddonVersions then _G._EUI_AddonVersions = {} end

@@ -959,12 +959,6 @@ end
 --  Initialization
 -------------------------------------------------------------------------------
 function ECL:OnInitialize()
-    -- Bail out if user has disabled this addon in Global Settings
-    if EllesmereUIDB and EllesmereUIDB.disabledAddons and EllesmereUIDB.disabledAddons[ADDON_NAME] then
-        self._userDisabled = true
-        return
-    end
-
     self.db = EllesmereUI.Lite.NewDB("EllesmereUICursorDB", {
         profile = {
             enabled = true,
@@ -1013,8 +1007,6 @@ function ECL:OnInitialize()
 end
 
 function ECL:OnEnable()
-    if self._userDisabled then return end
-
     -- Minimap button (shared across all Ellesmere addons â€” first to load wins)
     -- Minimap button (handled by parent addon)
     if not _EllesmereUI_MinimapRegistered and EllesmereUI and EllesmereUI.CreateMinimapButton then

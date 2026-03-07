@@ -1,4 +1,4 @@
-﻿-------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 --  EllesmereUIActionBars.lua  Custom Action Bars (full rewrite)
 --
 --  Creates its own secure action bar frames and buttons instead of hooking
@@ -3321,7 +3321,7 @@ local function GetOrCreateBindButton(btn)
     if btn._bindBtn then return btn._bindBtn end
     if InCombatLockdown() then return nil end
 
-    local bind = CreateFrame("Button", btn:GetName() .. "Hotkey", btn, "SecureActionButtonTemplate")
+    local bind = CreateFrame("Button", btn:GetName() .. "_EABBind", btn, "SecureActionButtonTemplate")
     bind:SetAttributeNoHandler("type", "action")
     bind:SetAttributeNoHandler("useparent-action", true)
     bind:SetAttributeNoHandler("useparent-checkfocuscast", true)
@@ -3400,11 +3400,13 @@ local function UpdateKeybinds()
                             ApplyBindButtonMode(bind, keyDownEnabled)
                             ClearOverrideBindings(bind)
                             local bindName = bind:GetName()
-                            if key1 then
-                                SetOverrideBindingClick(bind, false, key1, bindName, clickType)
-                            end
-                            if key2 then
-                                SetOverrideBindingClick(bind, false, key2, bindName, clickType)
+                            if bindName then
+                                if key1 then
+                                    SetOverrideBindingClick(bind, false, key1, bindName, clickType)
+                                end
+                                if key2 then
+                                    SetOverrideBindingClick(bind, false, key2, bindName, clickType)
+                                end
                             end
                         end
                     end
@@ -3820,12 +3822,6 @@ end
 --  Initialization
 -------------------------------------------------------------------------------
 function EAB:OnInitialize()
-    -- Bail out if user has disabled this addon in Global Settings
-    if EllesmereUIDB and EllesmereUIDB.disabledAddons and EllesmereUIDB.disabledAddons[ADDON_NAME] then
-        self._userDisabled = true
-        return
-    end
-
     -- Detect first install BEFORE AceDB creates the saved variable.
     -- We use a dedicated flag so "Reset to Defaults" also re-captures.
     local rawDB = EllesmereUIActionBarsDB
@@ -3871,8 +3867,6 @@ function EAB:OnInitialize()
 end
 
 function EAB:OnEnable()
-    if self._userDisabled then return end
-
     -- If this is a first install (or reset), we need to capture Blizzard's
     -- Edit Mode layout BEFORE hiding bars. Defer the full setup to
     -- PLAYER_ENTERING_WORLD so Edit Mode has applied positions.
