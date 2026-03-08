@@ -21,6 +21,12 @@ do
     local GetPhysicalScreenSize = GetPhysicalScreenSize
     local dbReady = false
 
+    local pendingScale = nil   -- scale to apply once the world is ready
+
+    local function ApplyScaleSafe(scale)
+        UIParent:SetScale(scale)
+    end
+
     local scaleFrame = CreateFrame("Frame")
     scaleFrame:RegisterEvent("ADDON_LOADED")
     scaleFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -44,9 +50,11 @@ do
                 EllesmereUIDB.ppUIScaleAuto = true
             end
 
-            -- Apply saved scale immediately
+            -- Apply saved scale immediately for non-migration cases
+            -- (returning users who already have ppUIScale set)
             if EllesmereUIDB.ppUIScale then
-                UIParent:SetScale(EllesmereUIDB.ppUIScale)
+                pendingScale = EllesmereUIDB.ppUIScale
+                ApplyScaleSafe(pendingScale)
             end
 
         elseif event == "PLAYER_ENTERING_WORLD" then
@@ -62,6 +70,19 @@ do
                 local clamped = max(0.4, min(blizzScale, 1.15))
                 EllesmereUIDB.ppUIScale = clamped
                 EllesmereUIDB.ppUIScaleAuto = false
+                pendingScale = clamped
+            end
+
+            -- Re-apply scale now that the world is loaded, then again
+            -- after a short delay to beat any Blizzard resets
+            local scale = EllesmereUIDB.ppUIScale
+            if scale then
+                ApplyScaleSafe(scale)
+                C_Timer.After(1, function()
+                    if EllesmereUIDB and EllesmereUIDB.ppUIScale then
+                        ApplyScaleSafe(EllesmereUIDB.ppUIScale)
+                    end
+                end)
             end
         end
     end)
