@@ -13,3 +13,9 @@ CLAUDE_PATTERNS.md
 
 # Developer scripts
 *.ps1
+
+# Local LuaRocks dependency tree for unit tests
+deps/
+
+# Local unit test artifacts
+.testresults/

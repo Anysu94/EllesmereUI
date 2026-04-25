@@ -1,0 +1,79 @@
+name: CI
+
+# Continuous integration workflow for running local Lua unit tests.
+# This workflow is intentionally separated from the release workflow,
+# because it validates code changes on every branch and pull request.
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute test image name
+        id: image
+        shell: bash
+        run: |
+          echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ellesmereui-tests:latest" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull test runner image
+        run: |
+          docker pull "${{ steps.image.outputs.name }}"
+
+      - name: Run unit tests in container
+        id: unit-tests
+        shell: bash
+        run: |
+          mkdir -p .testresults
+          set +e
+          docker run --rm -v "$PWD:/workspace" -w /workspace "${{ steps.image.outputs.name }}" tests | tee .testresults/busted.log
+          plain_exit=${PIPESTATUS[0]}
+          docker run --rm -v "$PWD:/workspace" -w /workspace "${{ steps.image.outputs.name }}" -o junit -Xoutput .testresults/junit.xml tests
+          junit_exit=$?
+          exit_code=$plain_exit
+          if [ "$exit_code" -eq 0 ] && [ "$junit_exit" -ne 0 ]; then
+            exit_code=$junit_exit
+          fi
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish JUnit report
+        if: always()
+        uses: mikepenz/action-junit-report@v5
+        with:
+          report_paths: .testresults/junit.xml
+          detailed_summary: true
+          include_passed: true
+          require_tests: true
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lua-test-results
+          path: .testresults/
+          if-no-files-found: error
+
+      - name: Fail workflow on test errors
+        if: always() && steps.unit-tests.outputs.exit_code != '0'
+        run: exit 1

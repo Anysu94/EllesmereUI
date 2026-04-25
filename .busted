@@ -1,0 +1,7 @@
+return {
+  default = {
+    helper = "tests/bootstrap.lua",
+    pattern = "_spec",
+    verbose = true,
+  },
+}
