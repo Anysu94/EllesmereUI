@@ -15,7 +15,7 @@ without turning into one large bootstrap file and one large spec file.
 - `Tests/Core/` - pure core helper specs grouped by concern
 - `Tests/Modules/` - future module-specific specs for addon subfolders
 - `run-tests.ps1` - local PowerShell wrapper around Podman test execution
-- `TestResults/` - generated local test artifacts such as `busted.log` and `junit.xml`
+- `TestResults/` - generated local test artifacts such as `busted.log`, `junit.xml`, and coverage reports
 
 The intended split is:
 
@@ -51,12 +51,21 @@ Each run writes artifacts to `Testing/TestResults/`:
 
 - `Testing/TestResults/busted.log` - terminal-style test output
 - `Testing/TestResults/junit.xml` - JUnit XML for CI and GitHub reporting
+- `Testing/TestResults/luacov.report.out` - line coverage report with overall summary
 
 `busted` still prints its final terminal summary, for example:
 
 ```text
 6 successes / 0 failures / 0 errors / 0 pending
 ```
+
+The local runner also prints the overall coverage summary line from `LuaCov`, for example:
+
+```text
+Total           1234 346   78.10%
+```
+
+Coverage is evaluated against repository source `.lua` files, not just files that happened to be loaded during the current run. New source files are picked up automatically and show as `0%` until tests execute them.
 
 ## CI
 
@@ -65,3 +74,4 @@ The GitHub workflows use the same structure:
 - `Publish Test Image` publishes the image from `Testing/Containerfile`
 - `CI` pulls that image and runs the tests from `Testing/Tests`
 - The GitHub Actions test view is driven directly from `Testing/TestResults/junit.xml`
+- The GitHub Actions job summary includes the overall coverage line from `Testing/TestResults/luacov.report.out`

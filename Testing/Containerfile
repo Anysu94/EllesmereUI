@@ -19,6 +19,7 @@ RUN apt-get update \
 
 WORKDIR /workspace
 
-RUN luarocks --lua-version=5.1 install busted
+RUN luarocks --lua-version=5.1 install busted \
+    && luarocks --lua-version=5.1 install luacov
 
 ENTRYPOINT ["busted"]

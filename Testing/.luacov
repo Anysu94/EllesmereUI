@@ -1,0 +1,16 @@
+includeuntestedfiles = true
+
+statsfile = "Testing/TestResults/luacov.stats.out"
+reportfile = "Testing/TestResults/luacov.report.out"
+
+exclude = {
+  "^Testing/",
+  "^tests/",
+  "^%.git/",
+  "^%.github/",
+  "^%.vscode/",
+  "^/usr/local/share/lua/",
+  "^/usr/local/lib/lua/",
+  "^/usr/share/lua/",
+  "^/workspace/Testing/",
+}

@@ -48,16 +48,37 @@ jobs:
         run: |
           mkdir -p Testing/TestResults
           set +e
-          docker run --rm -v "$PWD:/workspace" -w /workspace "${{ steps.image.outputs.name }}" -f Testing/.busted Testing/Tests | tee Testing/TestResults/busted.log
+          rm -f Testing/TestResults/luacov.report.out Testing/TestResults/luacov.stats.out
+          docker run --rm -v "$PWD:/workspace" -w /workspace "${{ steps.image.outputs.name }}" -f Testing/.busted --coverage --coverage-config-file Testing/.luacov Testing/Tests | tee Testing/TestResults/busted.log
           plain_exit=${PIPESTATUS[0]}
           docker run --rm -v "$PWD:/workspace" -w /workspace "${{ steps.image.outputs.name }}" -f Testing/.busted -o junit -Xoutput Testing/TestResults/junit.xml Testing/Tests
           junit_exit=$?
+          docker run --rm --entrypoint luacov -v "$PWD:/workspace" -w /workspace "${{ steps.image.outputs.name }}" -c Testing/.luacov
+          coverage_exit=$?
+          coverage_summary=$(grep '^Total' Testing/TestResults/luacov.report.out || true)
+          echo "coverage_summary=$coverage_summary" >> "$GITHUB_OUTPUT"
           exit_code=$plain_exit
           if [ "$exit_code" -eq 0 ] && [ "$junit_exit" -ne 0 ]; then
             exit_code=$junit_exit
           fi
+          if [ "$exit_code" -eq 0 ] && [ "$coverage_exit" -ne 0 ]; then
+            exit_code=$coverage_exit
+          fi
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
           exit 0
+
+      - name: Publish coverage summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Coverage"
+            if [ -f Testing/TestResults/luacov.report.out ]; then
+              grep '^Total' Testing/TestResults/luacov.report.out || echo 'Coverage total unavailable'
+            else
+              echo 'Coverage report missing'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish JUnit report
         if: always()
