@@ -42,35 +42,79 @@ jobs:
         run: |
           docker pull "${{ steps.image.outputs.name }}"
 
-      - name: Run unit tests in container
+      - name: Prepare test artifacts directory
+        # All later steps write into the same folder so reports can be
+        # published without rerunning the suite.
+        run: mkdir -p Testing/TestResults
+
+      - name: Clear previous coverage artifacts
+        # LuaCov appends and reuses stats files, so each CI run starts from a
+        # clean state before the test container writes new coverage data.
+        run: rm -f Testing/TestResults/luacov.report.out Testing/TestResults/luacov.stats.out
+
+      - name: Run plain test pass with coverage collection
+        # This is the main human-readable test run. It also creates the raw
+        # LuaCov stats that the later coverage-report step consumes.
+        id: plain-tests
+        continue-on-error: true
+        shell: bash
+        run: set -o pipefail; docker run --rm -v "$PWD:/workspace" -w /workspace "${{ steps.image.outputs.name }}" -f Testing/.busted --coverage --coverage-config-file Testing/.luacov Testing/Tests | tee Testing/TestResults/busted.log
+
+      - name: Generate JUnit report
+        # GitHub's test UI consumes junit.xml, so this pass exists only to
+        # produce that machine-readable report.
+        id: junit-tests
+        continue-on-error: true
+        shell: bash
+        run: docker run --rm -v "$PWD:/workspace" -w /workspace "${{ steps.image.outputs.name }}" -f Testing/.busted -o junit -Xoutput Testing/TestResults/junit.xml Testing/Tests
+
+      - name: Generate coverage report
+        # The plain busted run writes raw LuaCov stats. This step turns those
+        # stats into the final luacov.report.out file.
+        id: coverage-report
+        continue-on-error: true
+        shell: bash
+        run: docker run --rm --entrypoint luacov -v "$PWD:/workspace" -w /workspace "${{ steps.image.outputs.name }}" -c Testing/.luacov
+
+      - name: Collect test result metadata
+        # Aggregate outcomes from the earlier steps into a single exit code and
+        # a targeted failure reason for the final fail step.
         id: unit-tests
+        if: always()
         shell: bash
         run: |
-          mkdir -p Testing/TestResults
-          set +e
-          rm -f Testing/TestResults/luacov.report.out Testing/TestResults/luacov.stats.out
-          docker run --rm -v "$PWD:/workspace" -w /workspace "${{ steps.image.outputs.name }}" -f Testing/.busted --coverage --coverage-config-file Testing/.luacov Testing/Tests | tee Testing/TestResults/busted.log
-          plain_exit=${PIPESTATUS[0]}
-          docker run --rm -v "$PWD:/workspace" -w /workspace "${{ steps.image.outputs.name }}" -f Testing/.busted -o junit -Xoutput Testing/TestResults/junit.xml Testing/Tests
-          junit_exit=$?
-          docker run --rm --entrypoint luacov -v "$PWD:/workspace" -w /workspace "${{ steps.image.outputs.name }}" -c Testing/.luacov
-          coverage_exit=$?
+          failure_reason=""
+
+          if grep -q 'LuaCov not found on the system' Testing/TestResults/busted.log 2>/dev/null; then
+            failure_reason='Pulled test image does not contain LuaCov yet. Run the Publish Test Image workflow so GHCR latest matches the current Testing/Containerfile.'
+          elif [ "${{ steps.coverage-report.outcome }}" = 'failure' ] && [ ! -f Testing/TestResults/luacov.report.out ]; then
+            failure_reason='Coverage report generation failed. The pulled GHCR test image is likely stale or incomplete.'
+          elif [ "${{ steps.plain-tests.outcome }}" = 'failure' ]; then
+            failure_reason='The containerized test run failed. See busted.log for the underlying test error.'
+          elif [ "${{ steps.junit-tests.outcome }}" = 'failure' ]; then
+            failure_reason='JUnit report generation failed.'
+          fi
+
           coverage_summary=$(grep '^Total' Testing/TestResults/luacov.report.out || true)
           echo "coverage_summary=$coverage_summary" >> "$GITHUB_OUTPUT"
-          exit_code=$plain_exit
-          if [ "$exit_code" -eq 0 ] && [ "$junit_exit" -ne 0 ]; then
-            exit_code=$junit_exit
-          fi
-          if [ "$exit_code" -eq 0 ] && [ "$coverage_exit" -ne 0 ]; then
-            exit_code=$coverage_exit
+          echo "failure_reason=$failure_reason" >> "$GITHUB_OUTPUT"
+
+          exit_code=0
+          if [ "${{ steps.plain-tests.outcome }}" = 'failure' ]; then
+            exit_code=1
+          elif [ "${{ steps.junit-tests.outcome }}" = 'failure' ]; then
+            exit_code=1
+          elif [ "${{ steps.coverage-report.outcome }}" = 'failure' ]; then
+            exit_code=1
           fi
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
-          exit 0
 
       - name: Publish coverage summary
         if: always()
         shell: bash
         run: |
+          # Surface the single most important coverage line directly in the job
+          # summary so nobody needs to open the full report by default.
           {
             echo "## Coverage"
             if [ -f Testing/TestResults/luacov.report.out ]; then
@@ -91,4 +135,14 @@ jobs:
 
       - name: Fail workflow on test errors
         if: always() && steps.unit-tests.outputs.exit_code != '0'
-        run: exit 1
+        shell: bash
+        run: |
+          # Final hard fail after report publication so GitHub still shows junit
+          # and coverage context even when the run was unsuccessful.
+          echo "Tests failed earlier in the workflow."
+          echo "Image: ${{ steps.image.outputs.name }}"
+          echo "Exit code: ${{ steps.unit-tests.outputs.exit_code }}"
+          if [ -n "${{ steps.unit-tests.outputs.failure_reason }}" ]; then
+            echo "Reason: ${{ steps.unit-tests.outputs.failure_reason }}"
+          fi
+          exit 1
