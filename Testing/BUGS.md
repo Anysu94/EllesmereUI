@@ -284,3 +284,102 @@ Repro path used in tests:
 ## Untriaged Failures
 
 None currently listed in this file.
+
+## AuraBuffReminders
+
+### Shaman shield reminder always casts Lightning Shield for Resto (should be Water Shield)
+
+- Area: `EllesmereUIAuraBuffReminders/EllesmereUIAuraBuffReminders.lua`
+- Confirming spec: `Testing/Tests/Modules/AuraBuffReminders/abr_shield_bugs_spec.lua`
+- Status: confirmed by test (documented bug)
+
+Observed behavior:
+
+- The `ls_ws_orbit` entry in `SHAMAN_SHIELDS` has `castSpell=192106` (Lightning
+  Shield) hardcoded. When a Resto Shaman with Elemental Orbit is missing their
+  secondary shield, the reminder icon shows Lightning Shield and the secure
+  cast button would cast Lightning Shield.
+- Resto Shamans should cast Water Shield (52127) instead.
+
+Likely cause:
+
+- The `SHAMAN_SHIELDS` table has no spec-awareness (`specs` field). The
+  `castSpell` field is hardcoded and cannot vary by specialization.
+
+---
+
+### No shield reminder for Ele/Enh Shaman without Elemental Orbit
+
+- Area: `EllesmereUIAuraBuffReminders/EllesmereUIAuraBuffReminders.lua`
+- Confirming spec: `Testing/Tests/Modules/AuraBuffReminders/abr_shield_bugs_spec.lua`
+- Status: confirmed by test (documented bug)
+
+Observed behavior:
+
+- The `shield_basic` entry uses `castSpell=974` (Earth Shield), which Ele/Enh
+  Shamans don't know. The `Known(974)` check fails, so no shield reminder is
+  ever shown, even though Ele/Enh know Lightning Shield (192106).
+
+---
+
+### Paladin rite loop emits duplicate reminder icons when both rites are known
+
+- Area: `EllesmereUIAuraBuffReminders/EllesmereUIAuraBuffReminders.lua`
+- Confirming spec: `Testing/Tests/Modules/AuraBuffReminders/abr_shield_bugs_spec.lua`
+- Status: confirmed by test (documented bug)
+
+Observed behavior:
+
+- When a Lightsmith Paladin knows both Rite of Adjuration and Rite of
+  Sanctification and has no weapon enchant, the loop emits two separate
+  reminder icons instead of stopping after the first eligible match.
+
+Likely cause:
+
+- The `PALADIN_RITES` loop at line ~1756 has no `break` after inserting the
+  first reminder, unlike the Shaman imbue and Rogue poison loops which both
+  stop at the first match.
+
+---
+
+### Pre-combat aura snapshot causes stale results for expired raid buffs in combat
+
+- Area: `EllesmereUIAuraBuffReminders/EllesmereUIAuraBuffReminders.lua`
+- Confirming spec: `Testing/Tests/Modules/AuraBuffReminders/abr_combat_snapshot_spec.lua`
+- Status: confirmed by test (documented bug)
+
+Observed behavior:
+
+- `PlayerHasAuraByID()` uses `_preCombatAuraCache` as fallback when the API
+  returns `nil` during combat. If a raid buff was present before the pull but
+  expires mid-combat (e.g. buff provider dies), the snapshot still reports it
+  as active, suppressing the reminder.
+
+Likely cause:
+
+- The snapshot is populated at combat entry and never updated during combat.
+  The fallback path at line ~305 returns `true` for any spell that was in the
+  cache, regardless of whether the actual aura expired.
+
+## Resource Bars
+
+### Cast bar progress divides by zero for zero-duration casts
+
+- Area: `EllesmereUIResourceBars/EllesmereUIResourceBars.lua`
+- Confirming spec: `Testing/Tests/Modules/ResourceBars/castbar_divzero_spec.lua`
+- Status: confirmed by test (documented bug)
+
+Observed behavior:
+
+- The cast bar OnUpdate handler at lines ~3541 and ~3575 computes progress as
+  `(now - startTime) / (endTime - startTime)` without guarding against
+  `endTime == startTime`. When both are equal, this produces `0/0 = NaN`.
+- `min(max(NaN, 0), 1)` returns `NaN` in Lua because NaN fails all
+  comparisons. Passing NaN to `bar:SetValue()` can corrupt widget state.
+- The tick-mark code at line ~3452 correctly guards this case with
+  `if channelDuration > 0 then ... else numTicks = 0 end`.
+
+Likely cause:
+
+- Oversight — the zero-duration guard was added to tick marks but not to the
+  main progress calculation.
