@@ -6,6 +6,7 @@ describe("Action Bars page and visibility helpers", function()
     local original_UnitClass
     local original_GetOverrideBarIndex
     local original_GetVehicleBarIndex
+    local original_C_ActionBar
     local original_NUM_ACTIONBAR_PAGES
 
     local currentClass
@@ -30,6 +31,13 @@ describe("Action Bars page and visibility helpers", function()
         sourceFile:close()
         actionSource = actionSource:gsub("^\239\187\191", "")
         actionSource = actionSource:gsub("\r\n", "\n")
+
+        actionSource = replaceExact(
+            actionSource,
+            "    parts[#parts + 1] = tostring(defaultPage or 1)\n    return table.concat(parts, \"; \")\nend\n\n-------------------------------------------------------------------------------\n--  Paging State Conditions (class-specific, hardcoded fallback)",
+            "    parts[#parts + 1] = tostring(defaultPage or 1)\n    return table.concat(parts, \"; \")\nend\nEAB._BuildPagingConditions = EAB_VTABLE.BuildPagingConditions\n\n-------------------------------------------------------------------------------\n--  Paging State Conditions (class-specific, hardcoded fallback)",
+            "BuildPagingConditions"
+        )
 
         actionSource = replaceExact(
             actionSource,
@@ -61,6 +69,7 @@ describe("Action Bars page and visibility helpers", function()
         original_UnitClass = _G.UnitClass
         original_GetOverrideBarIndex = _G.GetOverrideBarIndex
         original_GetVehicleBarIndex = _G.GetVehicleBarIndex
+        original_C_ActionBar = _G.C_ActionBar
         original_NUM_ACTIONBAR_PAGES = _G.NUM_ACTIONBAR_PAGES
 
         currentClass = "DRUID"
@@ -78,6 +87,7 @@ describe("Action Bars page and visibility helpers", function()
         _G.GetVehicleBarIndex = function()
             return currentVehicleIndex
         end
+        _G.C_ActionBar = nil
         _G.NUM_ACTIONBAR_PAGES = 6
     end)
 
@@ -87,7 +97,65 @@ describe("Action Bars page and visibility helpers", function()
         _G.UnitClass = original_UnitClass
         _G.GetOverrideBarIndex = original_GetOverrideBarIndex
         _G.GetVehicleBarIndex = original_GetVehicleBarIndex
+        _G.C_ActionBar = original_C_ActionBar
         _G.NUM_ACTIONBAR_PAGES = original_NUM_ACTIONBAR_PAGES
+    end)
+
+    it("builds configurable main-bar paging conditions with modifier overrides and class defaults", function()
+        local ns = loadActionBarsNamespace(buildNamespace())
+
+        local conditions = ns.EAB._BuildPagingConditions("MainBar", {
+            alt = 6,
+            bear = false,
+            moonkin = 10,
+        }, 1)
+
+        assert.are.equal(
+            "[overridebar] 14; [vehicleui][possessbar] 15; [mod:alt] 6; [bonusbar:1,stealth] 7; [bonusbar:1] 7; [bonusbar:2] 8; [bonusbar:4] 10; [bonusbar:5] 11; [bar:2] 2; [bar:3] 3; [bar:4] 4; [bar:5] 5; [bar:6] 6; 1",
+            conditions
+        )
+    end)
+
+    it("builds non-main custom paging without injecting main-bar-only defaults", function()
+        currentClass = "ROGUE"
+        local ns = loadActionBarsNamespace(buildNamespace())
+
+        local conditions = ns.EAB._BuildPagingConditions("Bar2", {
+            shift = 3,
+            stealth = 7,
+        }, 6)
+
+        assert.are.equal("[mod:shift] 3; [bonusbar:1] 7; 6", conditions)
+    end)
+
+    it("uses C_ActionBar fallback wrappers when legacy global APIs are unavailable", function()
+        _G.GetOverrideBarIndex = nil
+        _G.GetVehicleBarIndex = nil
+        _G.C_ActionBar = {
+            GetOverrideBarIndex = function() return 21 end,
+            GetVehicleBarIndex = function() return 22 end,
+            GetActionBarPage = function() return 1 end,
+            HasVehicleActionBar = function() return false end,
+            HasOverrideActionBar = function() return false end,
+            HasTempShapeshiftActionBar = function() return false end,
+        }
+
+        local ns = loadActionBarsNamespace(buildNamespace())
+
+        local conditions = ns.EAB._BuildPagingConditions("MainBar", {
+            ctrl = 5,
+        }, 1)
+
+        assert.is_truthy(conditions:find("%[overridebar%] 21;", 1, false))
+        assert.is_truthy(conditions:find("%[vehicleui%]%[possessbar%] 22;", 1, false))
+        assert.is_truthy(conditions:find("%[mod:ctrl%] 5;", 1, false))
+    end)
+
+    it("returns nil when no custom paging config is provided", function()
+        local ns = loadActionBarsNamespace(buildNamespace())
+
+        assert.is_nil(ns.EAB._BuildPagingConditions("Bar3", nil, 5))
+        assert.is_nil(ns.EAB._BuildPagingConditions("Bar3", {}, 5))
     end)
 
     it("builds druid paging conditions with override, vehicle, stance, and manual pages", function()

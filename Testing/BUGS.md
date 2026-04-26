@@ -168,6 +168,36 @@ Note:
 
 ---
 
+### Switching cdStateEffect away from hidden modes can leave icons permanently hidden
+
+- Area: `EllesmereUICooldownManager/EllesmereUICdmHooks.lua`
+- Confirming spec: `Testing/Tests/Modules/CooldownManager/hooks_resolution_spec.lua`
+- Status: confirmed by an intentionally red test
+
+Observed behavior:
+
+- An icon hidden via `hiddenOnCD` or `hiddenReady` can stay at alpha `0` after
+  the spell setting is switched to a non-hide effect such as `pixelGlowReady`.
+- The new effect logic may start the glow, but the icon opacity is not restored
+  to the bar's configured visible alpha.
+
+Likely cause:
+
+- The `SetDesaturated` cd-state hook clears `_cdStateHidden` when no hide mode
+  is active, but it does not restore `frame:SetAlpha(barOpacity)` on that
+  transition path.
+
+Repro path used in tests:
+
+1. Apply `hiddenOnCD` to a spell and simulate an active non-GCD cooldown.
+2. Trigger the desaturation hook and confirm the icon alpha becomes `0`.
+3. Switch the same spell to `pixelGlowReady` and simulate the cooldown ending.
+4. Trigger the desaturation hook again.
+5. Observe that the icon remains at alpha `0` instead of returning to the
+   configured bar opacity.
+
+---
+
 ### Replacing a tracked spell does not collapse duplicate variant-family entries
 
 - Area: `EllesmereUICooldownManager/EllesmereUICdmSpellPicker.lua`
