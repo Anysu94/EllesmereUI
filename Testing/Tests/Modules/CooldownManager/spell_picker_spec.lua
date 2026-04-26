@@ -503,6 +503,22 @@ describe("Cooldown Manager spell picker helpers", function()
         assert.is_false(ns.IsBarBuffFamily("cooldowns"))
     end)
 
+    it("treats custom_buff and unknown bars as non-buff-family entries", function()
+        local ns = buildNamespace()
+        ns.barDataByKey.aura_bar = { key = "aura_bar", barType = "custom_buff" }
+        ns.barDataByKey.custom_cd = { key = "custom_cd", barType = "cooldowns" }
+        ns.barDataByKey.untyped = { key = "untyped" }
+        loadSpellPicker(ns)
+
+        assert.are.equal("custom_buff", ns.GetBarType("aura_bar"))
+        assert.are.equal("cooldowns", ns.GetBarType(ns.barDataByKey.custom_cd))
+        assert.is_nil(ns.GetBarType("missing_bar"))
+        assert.is_nil(ns.GetBarType(ns.barDataByKey.untyped))
+        assert.is_false(ns.IsBarBuffFamily("aura_bar"))
+        assert.is_false(ns.IsBarBuffFamily(ns.barDataByKey.custom_cd))
+        assert.is_false(ns.IsBarBuffFamily("missing_bar"))
+    end)
+
     -- Reorder operations should preserve the visible icon order that users see
     -- in the editor, even before a bar has persisted order data.
 
@@ -1000,6 +1016,119 @@ describe("Cooldown Manager spell picker helpers", function()
         assert(_G.EllesmereUIDB.spellAssignments.specProfiles.specA._barFilterModelV6 == true, "empty default bars should mark the migration complete without trying to build ghost assignments")
     end)
 
+    it("stamps the migration when the spec profile has no persisted barSpells yet", function()
+        local ns = buildNamespace()
+
+        _G.EllesmereUIDB = {
+            spellAssignments = {
+                specProfiles = {
+                    specA = {},
+                },
+            },
+        }
+        ns.GetActiveSpecKey = function()
+            return "specA"
+        end
+
+        loadSpellPicker(ns)
+
+        assert.is_nil(ns.MigrateSpecToBarFilterModelV6())
+        assert.is_true(_G.EllesmereUIDB.spellAssignments.specProfiles.specA._barFilterModelV6)
+    end)
+
+    it("treats only enabled cooldown and utility bars as visible assignments during migration", function()
+        local ns = buildNamespace()
+
+        _G.Enum = {
+            CooldownViewerCategory = {
+                Essential = 0,
+                Utility = 1,
+            },
+        }
+        _G.EllesmereUIDB = {
+            spellAssignments = {
+                specProfiles = {
+                    specA = {
+                        barSpells = {
+                            cooldowns = { assignedSpells = { 100 } },
+                            utility = { assignedSpells = {} },
+                            disabled_custom = { assignedSpells = { 400 } },
+                            buffs = { assignedSpells = { 500 } },
+                            aura_bar = { assignedSpells = { 600 } },
+                        },
+                    },
+                },
+            },
+        }
+        ns.ECME.db = {
+            profile = {
+                cdmBars = {
+                    bars = {
+                        { key = "cooldowns", barType = "cooldowns", enabled = true },
+                        { key = "utility", barType = "utility", enabled = true },
+                        { key = "disabled_custom", barType = "cooldowns", enabled = false },
+                        { key = "buffs", barType = "buffs", enabled = true },
+                        { key = "aura_bar", barType = "custom_buff", enabled = true },
+                    },
+                },
+            },
+        }
+        ns.GetActiveSpecKey = function()
+            return "specA"
+        end
+        _G.EssentialCooldownViewer = {
+            itemFramePool = makeActivePool({
+                {
+                    cooldownID = 11,
+                    layoutIndex = 1,
+                    IsShown = function()
+                        return true
+                    end,
+                    cooldownInfo = { spellID = 400 },
+                },
+                {
+                    cooldownID = 12,
+                    layoutIndex = 2,
+                    IsShown = function()
+                        return true
+                    end,
+                    cooldownInfo = { spellID = 500 },
+                },
+                {
+                    cooldownID = 13,
+                    layoutIndex = 3,
+                    IsShown = function()
+                        return true
+                    end,
+                    cooldownInfo = { spellID = 600 },
+                },
+            }),
+        }
+        _G.UtilityCooldownViewer = {
+            itemFramePool = makeActivePool({}),
+        }
+        _G.C_CooldownViewer = {
+            GetCooldownViewerCategorySet = function()
+                return nil
+            end,
+            GetCooldownViewerCooldownInfo = function()
+                return nil
+            end,
+        }
+
+        loadSpellPicker(ns)
+
+        assert.are.equal(3, ns.MigrateSpecToBarFilterModelV6())
+        local ghostSet = {}
+        for _, sid in ipairs(_G.EllesmereUIDB.spellAssignments.specProfiles.specA.barSpells.__ghost_cd.assignedSpells) do
+            ghostSet[sid] = true
+        end
+        assert.is_true(ghostSet[400])
+        assert.is_true(ghostSet[500])
+        assert.is_true(ghostSet[600])
+        assert.is_true(_G.EllesmereUIDB.spellAssignments.specProfiles.specA._barFilterModelV6)
+    end)
+
     it("leaves the migration unstamped when viewer pools are still empty and it must retry later", function()
         local ns = buildNamespace()
 
@@ -1036,6 +1165,95 @@ describe("Cooldown Manager spell picker helpers", function()
 
     -- These preset tests intentionally describe the desired custom_buff bar
     -- semantics. They currently fail and therefore document real bugs.
+
+    it("stores preset primary IDs and group metadata on standard bars", function()
+        local ns = buildNamespace()
+        local spellData = {
+            cooldowns = { assignedSpells = {} },
+        }
+
+        ns.barDataByKey.cooldowns = { key = "cooldowns", barType = "cooldowns" }
+        ns.cdmBarFrames.cooldowns = { _blizzCache = true, _prevVisibleCount = 4 }
+        ns.GetBarSpellData = function(barKey)
+            return spellData[barKey]
+        end
+
+        loadSpellPicker(ns)
+
+        local preset = {
+            spellIDs = { 700, 701, 702 },
+            duration = 30,
+        }
+
+        assert.is_true(ns.AddPresetToBar("cooldowns", preset))
+        assert.are.same({ 700 }, spellData.cooldowns.assignedSpells)
+        assert.are.equal(30, spellData.cooldowns.customSpellDurations[700])
+        assert.are.equal(700, spellData.cooldowns.customSpellGroups[700])
+        assert.are.equal(700, spellData.cooldowns.customSpellGroups[701])
+        assert.are.equal(700, spellData.cooldowns.customSpellGroups[702])
+        assert.is_nil(ns.cdmBarFrames.cooldowns._blizzCache)
+        assert.is_nil(ns.cdmBarFrames.cooldowns._prevVisibleCount)
+    end)
+
+    it("rejects duplicate primary preset IDs on standard bars without mutating metadata", function()
+        local ns = buildNamespace()
+        local spellData = {
+            cooldowns = {
+                assignedSpells = { 700 },
+                customSpellDurations = { [700] = 15 },
+                customSpellGroups = { [700] = 700, [701] = 700 },
+            },
+        }
+
+        ns.barDataByKey.cooldowns = { key = "cooldowns", barType = "cooldowns" }
+        ns.GetBarSpellData = function(barKey)
+            return spellData[barKey]
+        end
+
+        loadSpellPicker(ns)
+
+        local ok, reason = ns.AddPresetToBar("cooldowns", {
+            spellIDs = { 700, 701, 702 },
+            duration = 30,
+        })
+
+        assert.is_false(ok)
+        assert.are.equal("exists", reason)
+        assert.are.same({ 700 }, spellData.cooldowns.assignedSpells)
+        assert.are.equal(15, spellData.cooldowns.customSpellDurations[700])
+        assert.is_nil(spellData.cooldowns.customSpellDurations[702])
+        assert.are.equal(700, spellData.cooldowns.customSpellGroups[701])
+        assert.is_nil(spellData.cooldowns.customSpellGroups[702])
+    end)
+
+    it("rejects glow-based presets on custom_buff bars without mutating the bar", function()
+        local ns = buildNamespace()
+        local spellData = {
+            aura_bar = {
+                assignedSpells = { 701 },
+                spellDurations = { [701] = 15 },
+            },
+        }
+
+        ns.barDataByKey.aura_bar = { key = "aura_bar", barType = "custom_buff" }
+        ns.GetBarSpellData = function(barKey)
+            return spellData[barKey]
+        end
+
+        loadSpellPicker(ns)
+
+        local ok, reason = ns.AddPresetToBar("aura_bar", {
+            spellIDs = { 900, 901 },
+            duration = 45,
+            glowBased = true,
+        })
+
+        assert.is_false(ok)
+        assert.is_nil(reason)
+        assert.are.same({ 701 }, spellData.aura_bar.assignedSpells)
+        assert.are.equal(15, spellData.aura_bar.spellDurations[701])
+        assert.is_nil(spellData.aura_bar.spellDurations[900])
+    end)
 
     it("stores every preset spellID on custom_buff aura bars so each aura variant can activate independently", function()
         local ns = buildNamespace()
