@@ -27,6 +27,64 @@ describe("Cooldown Manager tracked buff bar helpers", function()
         }
     end
 
+    local function makeTexture(label)
+        return {
+            label = label,
+            hidden = false,
+            shown = false,
+            size = nil,
+            point = nil,
+            hideCalls = 0,
+            showCalls = 0,
+            ClearAllPoints = function(self)
+                self.point = nil
+            end,
+            SetColorTexture = function() end,
+            SetSnapToPixelGrid = function() end,
+            SetTexelSnappingBias = function() end,
+            SetSize = function(self, width, height)
+                self.size = { width, height }
+            end,
+            SetPoint = function(self, ...)
+                self.point = { ... }
+            end,
+            Hide = function(self)
+                self.hidden = true
+                self.shown = false
+                self.hideCalls = self.hideCalls + 1
+            end,
+            Show = function(self)
+                self.hidden = false
+                self.shown = true
+                self.showCalls = self.showCalls + 1
+            end,
+        }
+    end
+
+    local function makeTextureFactory()
+        local created = {}
+        local owner = {
+            CreateTexture = function(_, ...)
+                local texture = makeTexture("created-" .. tostring(#created + 1))
+                texture.createArgs = { ... }
+                created[#created + 1] = texture
+                return texture
+            end,
+        }
+        return owner, created
+    end
+
+    local function makeStatusBar(width, height)
+        local owner, created = makeTextureFactory()
+        owner.GetWidth = function()
+            return width
+        end
+        owner.GetHeight = function()
+            return height
+        end
+        return owner, created
+    end
+
     before_each(function()
         original_GetTime = _G.GetTime
         original_C_UnitAuras = _G.C_UnitAuras
@@ -232,5 +290,59 @@ describe("Cooldown Manager tracked buff bar helpers", function()
 
         ns.RemoveTrackedBuffBar(99)
         assert.are.equal(1, rebuildCalls)
+    end)
+
+    it("parses threshold tick values and places only valid marks within the configured max", function()
+        local ns = loadBuffBars(buildNamespace())
+        local statusBar = makeStatusBar(100, 12)
+        local tickParent, createdTextures = makeTextureFactory()
+        local existingTexture = makeTexture("existing")
+        local tickCache = { existingTexture }
+        local onePx = (EllesmereUI and EllesmereUI.PP and EllesmereUI.PP.Scale and EllesmereUI.PP.Scale(1)) or 1
+        local scaleValue = (EllesmereUI and EllesmereUI.PP and EllesmereUI.PP.Scale) or function(value)
+            return value
+        end
+
+        ns.ApplyTBBTickMarks(statusBar, {
+            stackThresholdEnabled = true,
+            stackThresholdMaxEnabled = true,
+            stackThresholdMax = 5,
+            stackThresholdTicks = " 1, 0, bad, 5, 9 ",
+        }, tickCache, false, tickParent)
+
+        assert.are.equal(1, existingTexture.hideCalls)
+        assert.are.equal(3, #tickCache)
+        assert.are.equal(2, #createdTextures)
+
+        assert.is_true(tickCache[1].shown)
+        assert.same({ onePx, 12 }, tickCache[1].size)
+        assert.same({ "TOPLEFT", statusBar, "TOPLEFT", scaleValue(20), 0 }, tickCache[1].point)
+
+        assert.is_true(tickCache[2].shown)
+        assert.same({ "TOPLEFT", statusBar, "TOPLEFT", scaleValue(100), 0 }, tickCache[2].point)
+
+        assert.is_false(tickCache[3].shown)
+        assert.is_nil(tickCache[3].point)
+    end)
+
+    it("hides cached ticks and exits early when threshold ticks do not produce usable values", function()
+        local ns = loadBuffBars(buildNamespace())
+        local statusBar, createdTextures = makeStatusBar(80, 10)
+        local first = makeTexture("first")
+        local second = makeTexture("second")
+        local tickCache = { first, second }
+
+        ns.ApplyTBBTickMarks(statusBar, {
+            stackThresholdEnabled = true,
+            stackThresholdMaxEnabled = true,
+            stackThresholdMax = 5,
+            stackThresholdTicks = "0, bad, -2",
+        }, tickCache, true)
+
+        assert.are.equal(1, first.hideCalls)
+        assert.are.equal(1, second.hideCalls)
+        assert.are.equal(0, #createdTextures)
+        assert.is_false(first.shown)
+        assert.is_false(second.shown)
     end)
 end)
